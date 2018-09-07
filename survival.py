@@ -115,9 +115,12 @@ class RandomSurvivalForest():
 		cumulated_hazard = 0
 		cumulative_hazard_function = {}
 		for observed_time in sorted_unique_times:
-			cumulated_hazard += \
-				float(death_and_risk_at_time[observed_time]["death"]) / \
-				float(death_and_risk_at_time[observed_time]["risky"])
+			if death_and_risk_at_time[observed_time]["risky"] != 0:
+				cumulated_hazard += \
+					float(death_and_risk_at_time[observed_time]["death"]) / \
+					float(death_and_risk_at_time[observed_time]["risky"])
+			else:
+				cumulated_hazard += 1
 			cumulative_hazard_function[observed_time] = cumulated_hazard
 		tree["cumulative_hazard_function"] = cumulative_hazard_function
 
