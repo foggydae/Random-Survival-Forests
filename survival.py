@@ -232,9 +232,9 @@ class RandomSurvivalForest():
 	def fit(self, x, event):
 		self.trees = [{} for i in range(self.n_trees)]
 		event.columns = ["time", "event"]
-		self.times = np.sort(list(x["time"].unique()))
+		self.times = np.sort(list(event["time"].unique()))
 		features = list(x.columns)
-		x = pd.concat((x,event), axis=1)
+		x = pd.concat((x, event), axis=1)
 		x = x.sort_values(by="time")
 		x.index = range(x.shape[0])
 		for i in range(self.n_trees):
