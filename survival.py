@@ -174,9 +174,9 @@ class RandomSurvivalForest():
 				return self._compute_survival(row, tree)
 		else:
 			if row[tree["feature"]] > tree["median"]:
-				return self._predict_row(tree["right"], row)
+				return self._predict_row(tree["right"], row, target=target)
 			else:
-				return self._predict_row(tree["left"], row)
+				return self._predict_row(tree["left"], row, target=target)
 
 
 	def _get_ensemble_cumulative_hazard(self, row):
@@ -197,7 +197,7 @@ class RandomSurvivalForest():
 		ensemble_cumulative_hazard = {}
 		for observed_time in self.times:
 			ensemble_cumulative_hazard[observed_time] = \
-				np.avg([hazard_function[observed_time] 
+				np.mean([hazard_function[observed_time] 
 						for hazard_function in hazard_functions])
 		return ensemble_cumulative_hazard
 
@@ -232,39 +232,39 @@ class RandomSurvivalForest():
 		self._print_tree(tree["right"], depth + 1)
 
 	
-	def fit(self, x, event):
+	def fit(self, x_train, y_train):
 		self.trees = [{} for i in range(self.n_trees)]
-		event.columns = ["time", "event"]
-		self.times = np.sort(list(event["time"].unique()))
-		features = list(x.columns)
-		x = pd.concat((x, event), axis=1)
-		x = x.sort_values(by="time")
-		x.index = range(x.shape[0])
+		y_train.columns = ["time", "event"]
+		self.times = np.sort(list(y_train["time"].unique()))
+		features = list(x_train.columns)
+		x_train = pd.concat((x_train, y_train), axis=1)
+		x_train = x_train.sort_values(by="time")
+		x_train.index = range(x_train.shape[0])
 		for i in range(self.n_trees):
-			sampled_x = x.sample(frac = 1, replace = True)
+			sampled_x = x_train.sample(frac = 1, replace = True)
 			sampled_x.index = range(sampled_x.shape[0])
 			sampled_features = list(np.random.permutation(features))[:self.max_features] + ["time","event"]
 			self._build(sampled_x[sampled_features], self.trees[i], 0)
 
 	
-	def predict_survival_probability(self, x):
-		self.time_column = list(x.columns)[-1]
-		compute_trees = [x.apply(lambda u: self._predict_row(self.trees[i], u), axis=1) for i in range(self.n_trees)]
+	def predict_survival_probability(self, x_test):
+		self.time_column = list(x_test.columns)[-1]
+		compute_trees = [x_test.apply(lambda u: self._predict_row(self.trees[i], u), axis=1) for i in range(self.n_trees)]
 		return sum(compute_trees) / self.n_trees
 
 	
 	def predict_median_survival_times(self, x_test, average_to_get_median=True):
 		result = []
-		for _, row in x.iterrows():
+		for _, row in x_test.iterrows():
 			cumulative_hazard = self._get_ensemble_cumulative_hazard(row)
 			result.append(self._estimate_median_time(cumulative_hazard, average_to_get_median))
-		return result
+		return np.array(result)
 
 
-	def predict_cumulative_hazard(self, x):
+	def predict_cumulative_hazard(self, x_test):
 		result = [self._get_ensemble_cumulative_hazard(row) 
-				  for _, row in x.iterrows()]
-		return result
+				  for _, row in x_test.iterrows()]
+		return np.array(result)
 	
 
 	def draw(self):
