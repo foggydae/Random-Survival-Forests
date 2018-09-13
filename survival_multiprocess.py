@@ -252,7 +252,7 @@ class MPRandomSurvivalForest():
 			sampled_x.index = range(sampled_x.shape[0])
 			sampled_features = list(np.random.permutation(features))[:self.max_features] + ["time","event"]
 			sampled_datas.append(sampled_x[sampled_features])
-		with multiprocessing.Pool(20) as tmp_pool:
+		with multiprocessing.Pool(30) as tmp_pool:
 			trees = tmp_pool.map(self._grow_tree, sampled_datas)
 		self.trees = trees
 
