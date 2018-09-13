@@ -4,7 +4,7 @@ import numpy as np
 import math
 from collections import defaultdict
 
-class RandomSurvivalForest():
+class MPRandomSurvivalForest():
 
 	
 	def __init__(self, n_trees = 10, max_features = 2, max_depth = 5, min_samples_split = 2, split = "auto"):
@@ -233,8 +233,13 @@ class RandomSurvivalForest():
 		self._print_tree(tree["right"], depth + 1)
 
 	
+	def _grow_tree(self, data):
+		new_tree = {}
+		self._build(data, new_tree, 0)
+		return new_tree
+
+
 	def fit(self, x_train, y_train):
-		self.trees = [{} for i in range(self.n_trees)]
 		y_train.columns = ["time", "event"]
 		self.times = np.sort(list(y_train["time"].unique()))
 		features = list(x_train.columns)
@@ -247,7 +252,9 @@ class RandomSurvivalForest():
 			sampled_x.index = range(sampled_x.shape[0])
 			sampled_features = list(np.random.permutation(features))[:self.max_features] + ["time","event"]
 			sampled_datas.append(sampled_x[sampled_features])
-			self._build(sampled_x[sampled_features], self.trees[i], 0)
+		with multiprocessing.Pool(20) as tmp_pool:
+			trees = tmp_pool.map(self._grow_tree, sampled_datas)
+		self.trees = trees
 
 	
 	def predict_survival_probability(self, x_test):
