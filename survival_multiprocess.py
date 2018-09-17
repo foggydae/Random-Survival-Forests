@@ -4,20 +4,23 @@ import numpy as np
 import math
 from collections import defaultdict
 
+
 class MPRandomSurvivalForest():
 
-	
-	def __init__(self, n_trees = 10, max_features = 2, max_depth = 5, min_samples_split = 2, split = "auto"):
+
+	def __init__(self, n_trees = 30, max_features = 20, max_depth = 10, 
+			min_samples_split = 2, split = "auto"):
 		self.n_trees = n_trees
 		self.max_depth = max_depth
 		self.min_samples_split = min_samples_split
 		self.split = split
 		self.max_features = max_features
 
-	
+
 	def _logrank(self, x, feature):
 		c = x[feature].median()
-		if x[x[feature] <= c].shape[0] < self.min_samples_split or x[x[feature] > c].shape[0] <self.min_samples_split:
+		if x[x[feature] <= c].shape[0] < self.min_samples_split or \
+				x[x[feature] > c].shape[0] <self.min_samples_split:
 			return 0
 		t = list(set(x["time"]))
 		get_time = {t[i]:i for i in range(len(t))}
@@ -53,22 +56,25 @@ class MPRandomSurvivalForest():
 			if y[0][i] > 0:
 				num = num + d[1][i] - y[1][i] * d[0][i] / float(y[0][i])
 			if y[0][i] > 1:
-				den = den + (y[1][i] / float(y[0][i])) * y[2][i] * ((y[0][i] - d[0][i]) / (y[0][i] - 1)) * d[0][i]
+				den = den + (y[1][i] / float(y[0][i])) * y[2][i] * \
+					((y[0][i] - d[0][i]) / (y[0][i] - 1)) * d[0][i]
 		L = num / math.sqrt(den)
 		return abs(L)
 
-	
+
 	def _find_best_feature(self, x):
 		split_func = {"auto" : self._logrank}
-		features = [f for f in x.columns if f not in ["time", "event"]]
-		information_gains = [split_func[self.split](x, feature) for feature in features]
-		highest_ig = max(information_gains)
-		if highest_ig == 0:
+		features = [f for f in x.columns if f not in set(["time", "event"])]
+		sample_feas = list(np.random.permutation(features))[:self.max_features]
+		information_gains = [split_func[self.split](x, feature) 
+							 for feature in sample_feas]
+		highest_IG = max(information_gains)
+		if highest_IG == 0:
 			return None
 		else:
-			return features[information_gains.index(highest_ig)]
+			return features[information_gains.index(highest_IG)]
 
-	
+
 	def _compute_leaf(self, x, tree):
 		tree["type"] = "leaf"
 		# for each distinct death time, count the number of death and
@@ -125,14 +131,14 @@ class MPRandomSurvivalForest():
 			cumulative_hazard_function[observed_time] = cumulated_hazard
 		tree["cumulative_hazard_function"] = cumulative_hazard_function
 
-	
+
 	def _build(self, x, tree, depth):
 		unique_targets = pd.unique(x["time"])
 
 		if len(unique_targets) == 1 or depth == self.max_depth:
 			self._compute_leaf(x, tree)
 			return
-	
+
 		best_feature = self._find_best_feature(x)
 
 		if best_feature == None:
@@ -153,7 +159,7 @@ class MPRandomSurvivalForest():
 			tree[name] = {}
 			self._build(split_x, tree[name], depth + 1)
 
-	
+
 	def _compute_survival(self, row, tree):
 		count = tree["count"]
 		t = tree["t"]
@@ -165,8 +171,8 @@ class MPRandomSurvivalForest():
 				h = h * (1 - count[(ti,1)] / survivors)
 			survivors = survivors - count[(ti,1)] - count[(ti,0)]
 		return h
-	
-	
+
+
 	def _predict_row(self, tree, row, target="survival"):
 		if tree["type"] == "leaf":
 			if target == "hazard":
@@ -223,51 +229,61 @@ class MPRandomSurvivalForest():
 	def _print_with_depth(self, string, depth):
 		print("{0}{1}".format("    " * depth, string))
 
-	
+
 	def _print_tree(self, tree, depth = 0):
 		if tree["type"] == "leaf":
 			self._print_with_depth(tree["t"], depth)
 			return
-		self._print_with_depth("{0} > {1}".format(tree["feature"], tree["median"]), depth)
+		self._print_with_depth("{0} > {1}".format(tree["feature"], 
+							   tree["median"]), depth)
 		self._print_tree(tree["left"], depth + 1)
 		self._print_tree(tree["right"], depth + 1)
 
-	
+
 	def _grow_tree(self, data):
 		new_tree = {}
 		self._build(data, new_tree, 0)
 		return new_tree
 
 
+	def _sample_feature(self, x):
+		features = list(set(x.columns) - set(["time", "event"]))
+		sampled_features = \
+			list(np.random.permutation(features))[:self.max_features] + \
+			["time", "event"]
+		return sampled_features
+
+
 	def fit(self, x_train, y_train):
 		y_train.columns = ["time", "event"]
 		self.times = np.sort(list(y_train["time"].unique()))
-		features = list(x_train.columns)
 		x_train = pd.concat((x_train, y_train), axis=1)
 		x_train = x_train.sort_values(by="time")
 		x_train.index = range(x_train.shape[0])
 		sampled_datas = []
 		for i in range(self.n_trees):
-			sampled_x = x_train.sample(frac = 1, replace = True)
+			sampled_x = x_train.sample(frac=1, replace=True)
 			sampled_x.index = range(sampled_x.shape[0])
-			sampled_features = list(np.random.permutation(features))[:self.max_features] + ["time","event"]
-			sampled_datas.append(sampled_x[sampled_features])
+			sampled_datas.append(sampled_x)
 		with multiprocessing.Pool(30) as tmp_pool:
 			trees = tmp_pool.map(self._grow_tree, sampled_datas)
 		self.trees = trees
 
-	
+
 	def predict_survival_probability(self, x_test):
 		self.time_column = list(x_test.columns)[-1]
-		compute_trees = [x_test.apply(lambda u: self._predict_row(self.trees[i], u), axis=1) for i in range(self.n_trees)]
+		compute_trees = \
+			[x_test.apply(lambda u: self._predict_row(self.trees[i], u), axis=1)
+			 for i in range(self.n_trees)]
 		return sum(compute_trees) / self.n_trees
 
-	
+
 	def predict_median_survival_times(self, x_test, average_to_get_median=True):
 		result = []
 		for _, row in x_test.iterrows():
 			cumulative_hazard = self._get_ensemble_cumulative_hazard(row)
-			result.append(self._estimate_median_time(cumulative_hazard, average_to_get_median))
+			result.append(self._estimate_median_time(
+				cumulative_hazard, average_to_get_median))
 		return np.array(result)
 
 
@@ -275,12 +291,10 @@ class MPRandomSurvivalForest():
 		result = [self._get_ensemble_cumulative_hazard(row) 
 				  for _, row in x_test.iterrows()]
 		return np.array(result)
-	
+
 
 	def draw(self):
 		for i in range(len(self.trees)):
 			print("==========================================\nTree", i)
 			self._print_tree(self.trees[i])
-
-
 
